@@ -464,10 +464,7 @@ async def _verify_cloudbase_token(access_token: str) -> Dict[str, Any]:
         return cached
     if not CLOUDBASE_ENV_ID:
         raise HTTPException(status_code=500, detail="CLOUDBASE_ENV_ID not set")
-    url = (
-        f"https://{CLOUDBASE_ENV_ID}.{CLOUDBASE_REGION}.tcb-api.tencentcloudapi.com"
-        "/auth/v1/user/me"
-    )
+    url = f"https://{CLOUDBASE_ENV_ID}.api.tcloudbasegateway.com/auth/v1/user/me"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
@@ -488,27 +485,10 @@ async def _verify_cloudbase_token(access_token: str) -> Dict[str, Any]:
 def _user_id_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     if not isinstance(payload, dict):
         return None
-    direct = payload.get("user_id") or payload.get("uid") or payload.get("sub") or payload.get("openid")
-    if direct:
-        return str(direct)
-    for key in ("userInfo", "user_info", "user", "data", "result"):
-        node = payload.get(key)
-        if not isinstance(node, dict):
-            continue
-        nested = node.get("userInfo") or node.get("user_info")
-        for target in (node, nested):
-            if not isinstance(target, dict):
-                continue
-            value = (
-                target.get("user_id")
-                or target.get("uid")
-                or target.get("sub")
-                or target.get("openid")
-                or target.get("_openid")
-                or target.get("id")
-            )
-            if value:
-                return str(value)
+    for key in ("user_id", "sub"):
+        value = payload.get(key)
+        if value:
+            return str(value)
     return None
 
 
