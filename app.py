@@ -19,7 +19,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 
 app = FastAPI(title="LLM Gateway", version="0.1.0")
-logger = logging.getLogger(__name__)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -49,6 +48,7 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 CLOUDBASE_ENV_ID = os.getenv("CLOUDBASE_ENV_ID", "").strip()
 CLOUDBASE_REGION = os.getenv("CLOUDBASE_REGION", "ap-shanghai").strip()
 DISABLE_AUTH = _env_bool("DISABLE_AUTH", False)
@@ -77,6 +77,12 @@ REMOTE_CONFIG_BASE_URL = os.getenv("REMOTE_CONFIG_BASE_URL", "").strip()
 REMOTE_CONFIG_LIMIT = _env_int("REMOTE_CONFIG_LIMIT", 200)
 USER_PROFILE_TABLE = os.getenv("USER_PROFILE_TABLE", "user_profile").strip() or "user_profile"
 USER_POINTS_LEDGER_TABLE = os.getenv("USER_POINTS_LEDGER_TABLE", "user_points_ledger").strip() or "user_points_ledger"
+
+LOG_LEVEL_VALUE = getattr(logging, LOG_LEVEL, logging.INFO)
+if not logging.getLogger().handlers:
+    logging.basicConfig(level=LOG_LEVEL_VALUE, format="%(levelname)s: %(message)s")
+logger = logging.getLogger("llm_gateway")
+logger.setLevel(LOG_LEVEL_VALUE)
 
 
 def _strip_wrapping_quotes(value: str) -> str:
@@ -630,6 +636,18 @@ async def _record_usage(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> None:
     if not usage:
+        logger.info(
+            "billing_usage request_id=%s user_id=%s model=%s tokens_in=%s tokens_out=%s cost_cny=%s points=%s deducted=%s usage_missing=%s",
+            request_id,
+            user_id or "",
+            model,
+            "null",
+            "null",
+            "null",
+            "null",
+            False,
+            True,
+        )
         return
     cost_cny = _calc_cost(model, usage)
     points = _calc_points_from_cost(cost_cny)
