@@ -1,0 +1,72 @@
+{
+  "glm-4.7": {
+    "provider": "openai",
+    "api_base": "https://open.bigmodel.cn/api/paas/v4",
+    "api_key_env": "GLM_API_KEY"
+  },
+  "glm-4.6": {
+    "provider": "openai",
+    "api_base": "https://open.bigmodel.cn/api/paas/v4",
+    "api_key_env": "GLM_API_KEY"
+  },
+  "glm-4.5": {
+    "provider": "openai",
+    "api_base": "https://open.bigmodel.cn/api/paas/v4",
+    "api_key_env": "GLM_API_KEY"
+  },
+  "glm-4.5-air": {
+    "provider": "openai",
+    "api_base": "https://open.bigmodel.cn/api/paas/v4",
+    "api_key_env": "GLM_API_KEY"
+  },
+  "deepseek-chat": {
+    "provider": "openai",
+    "api_base": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY"
+  },
+  "deepseek-reasoner": {
+    "provider": "openai",
+    "api_base": "https://api.deepseek.com",
+    "api_key_env": "DEEPSEEK_API_KEY"
+  },
+  "hunyuan-2.0-thinking-20251109": {
+    "provider": "openai",
+    "api_base": "https://api.hunyuan.cloud.tencent.com/v1",
+    "api_key_env": "HUNYUAN_API_KEY"
+  },
+  "hunyuan-2.0-instruct-20251111": {
+    "provider": "openai",
+    "api_base": "https://api.hunyuan.cloud.tencent.com/v1",
+    "api_key_env": "HUNYUAN_API_KEY"
+  },
+  "doubao-seed-1-8-251228": {
+    "provider": "openai",
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key_env": "DOUBAO_API_KEY"
+  },
+  "doubao-seed-1-6-lite-251015": {
+    "provider": "openai",
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key_env": "DOUBAO_API_KEY"
+  },
+  "doubao-seed-1-6-flash-250828": {
+    "provider": "openai",
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key_env": "DOUBAO_API_KEY"
+  },
+  "doubao-Seed-1.6-thinking": {
+    "provider": "openai",
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key_env": "DOUBAO_API_KEY"
+  },
+  "deepseek-v3-2-251201": {
+    "provider": "openai",
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key_env": "DOUBAO_API_KEY"
+  },
+  "kimi-k2-250905": {
+    "provider": "openai",
+    "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+    "api_key_env": "DOUBAO_API_KEY"
+  }
+}
