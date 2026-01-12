@@ -57,6 +57,7 @@ BILLING_WEBHOOK_URL = os.getenv("BILLING_WEBHOOK_URL", "").strip()
 BILLING_WEBHOOK_TOKEN = os.getenv("BILLING_WEBHOOK_TOKEN", "").strip()
 POINTS_PER_1K_TOKENS = _env_float("POINTS_PER_1K_TOKENS", 1.0)
 POINTS_PER_YUAN = _env_int("POINTS_PER_YUAN", 500)
+TOKEN_CACHE_TTL = _env_int("TOKEN_CACHE_TTL", 300)
 MODEL_LIST = os.getenv("MODEL_LIST", "").strip()
 MODEL_LIST_FILE = os.getenv("MODEL_LIST_FILE", "").strip()
 MODEL_PROVIDER_MAP_RAW = os.getenv("MODEL_PROVIDER_MAP", "").strip()
@@ -158,6 +159,7 @@ MODEL_PROVIDER_MAP = _load_provider_map()
 MODEL_LIST_DATA = _load_model_list(MODEL_PROVIDER_MAP)
 MODEL_PRICING_MAP: Dict[str, Dict[str, float]] = {}
 MYSQL_POOL: Optional[asyncmy.Pool] = None
+TOKEN_CACHE: Dict[str, Tuple[Dict[str, Any], float]] = {}
 
 
 def _remote_config_enabled() -> bool:
@@ -437,8 +439,29 @@ def _parse_bearer(auth_header: Optional[str]) -> Optional[str]:
         return None
     return parts[1].strip()
 
+def _token_cache_get(token: str) -> Optional[Dict[str, Any]]:
+    if not token or TOKEN_CACHE_TTL <= 0:
+        return None
+    cached = TOKEN_CACHE.get(token)
+    if not cached:
+        return None
+    payload, expires_at = cached
+    if expires_at <= time.time():
+        TOKEN_CACHE.pop(token, None)
+        return None
+    return payload
+
+
+def _token_cache_set(token: str, payload: Dict[str, Any]) -> None:
+    if not token or TOKEN_CACHE_TTL <= 0:
+        return
+    TOKEN_CACHE[token] = (payload, time.time() + TOKEN_CACHE_TTL)
+
 
 async def _verify_cloudbase_token(access_token: str) -> Dict[str, Any]:
+    cached = _token_cache_get(access_token)
+    if cached is not None:
+        return cached
     if not CLOUDBASE_ENV_ID:
         raise HTTPException(status_code=500, detail="CLOUDBASE_ENV_ID not set")
     url = (
@@ -454,7 +477,10 @@ async def _verify_cloudbase_token(access_token: str) -> Dict[str, Any]:
     if resp.status_code < 200 or resp.status_code >= 300:
         raise HTTPException(status_code=401, detail="Invalid access token")
     try:
-        return resp.json()
+        payload = resp.json()
+        if isinstance(payload, dict):
+            _token_cache_set(access_token, payload)
+        return payload
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid access token")
 
@@ -462,7 +488,28 @@ async def _verify_cloudbase_token(access_token: str) -> Dict[str, Any]:
 def _user_id_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     if not isinstance(payload, dict):
         return None
-    return payload.get("user_id") or payload.get("sub") or payload.get("uid")
+    direct = payload.get("user_id") or payload.get("uid") or payload.get("sub") or payload.get("openid")
+    if direct:
+        return str(direct)
+    for key in ("userInfo", "user_info", "user", "data", "result"):
+        node = payload.get(key)
+        if not isinstance(node, dict):
+            continue
+        nested = node.get("userInfo") or node.get("user_info")
+        for target in (node, nested):
+            if not isinstance(target, dict):
+                continue
+            value = (
+                target.get("user_id")
+                or target.get("uid")
+                or target.get("sub")
+                or target.get("openid")
+                or target.get("_openid")
+                or target.get("id")
+            )
+            if value:
+                return str(value)
+    return None
 
 
 def _jsonable(obj: Any) -> Any:
