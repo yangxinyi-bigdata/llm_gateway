@@ -62,6 +62,7 @@ MODEL_LIST = os.getenv("MODEL_LIST", "").strip()
 MODEL_LIST_FILE = os.getenv("MODEL_LIST_FILE", "").strip()
 MODEL_PROVIDER_MAP_RAW = os.getenv("MODEL_PROVIDER_MAP", "").strip()
 MODEL_PROVIDER_MAP_FILE = os.getenv("MODEL_PROVIDER_MAP_FILE", "").strip()
+MODEL_PROVIDER_SEPARATOR = "::"
 MYSQL_DSN = os.getenv("MYSQL_DSN", "").strip()
 MYSQL_HOST = os.getenv("MYSQL_HOST", "").strip()
 MYSQL_PORT = _env_int("MYSQL_PORT", 3306)
@@ -240,6 +241,29 @@ def _normalize_price(value: Any) -> float:
         return 0.0
 
 
+def _split_model_key(model: str) -> Tuple[str, Optional[str]]:
+    raw = str(model or "").strip()
+    if not raw:
+        return "", None
+    if MODEL_PROVIDER_SEPARATOR in raw:
+        base, provider = raw.rsplit(MODEL_PROVIDER_SEPARATOR, 1)
+        base = base.strip()
+        provider = provider.strip()
+        if base and provider:
+            return base, provider
+    return raw, None
+
+
+def _build_model_key(model_name: str, service_provider: str) -> str:
+    base = str(model_name or "").strip()
+    provider = str(service_provider or "").strip()
+    if not base:
+        return ""
+    if provider:
+        return f"{base}{MODEL_PROVIDER_SEPARATOR}{provider}"
+    return base
+
+
 def _extract_pricing(provider_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     pricing: Dict[str, Dict[str, float]] = {}
     for model_name, cfg in provider_map.items():
@@ -283,6 +307,7 @@ async def _fetch_remote_provider_map() -> Dict[str, Dict[str, Any]]:
         if not model_name:
             continue
         provider = row.get("provider") or row.get("custom_llm_provider") or ""
+        service_provider = row.get("service_provider") or row.get("service") or row.get("vendor") or ""
         api_base = row.get("api_base") or row.get("base_url") or ""
         api_key_env = row.get("api_key_env") or ""
         api_key = row.get("api_key") or ""
@@ -291,6 +316,8 @@ async def _fetch_remote_provider_map() -> Dict[str, Dict[str, Any]]:
         cache_price = row.get("cache_price_per_1m")
         payload: Dict[str, Any] = {
             "provider": str(provider) if provider else "",
+            "service_provider": str(service_provider) if service_provider else "",
+            "upstream_model": model_name,
             "api_base": str(api_base) if api_base else "",
             "api_key_env": str(api_key_env) if api_key_env else "",
             "input_price_per_1m": _normalize_price(input_price),
@@ -299,7 +326,9 @@ async def _fetch_remote_provider_map() -> Dict[str, Dict[str, Any]]:
         }
         if api_key:
             payload["api_key"] = str(api_key)
-        provider_map[model_name] = payload
+        model_key = _build_model_key(model_name, service_provider)
+        if model_key:
+            provider_map[model_key] = payload
     return provider_map
 
 
@@ -320,7 +349,7 @@ async def _fetch_mysql_provider_map() -> Dict[str, Dict[str, Any]]:
         return {}
     table = REMOTE_CONFIG_TABLE or "llm_gateway_model_map"
     query = (
-        "SELECT model_name, provider, api_base, api_key_env, api_key, "
+        "SELECT model_name, service_provider, provider, api_base, api_key_env, api_key, "
         "input_price_per_1m, output_price_per_1m, cache_price_per_1m, enabled "
         f"FROM {table} WHERE enabled = 1 ORDER BY model_name"
     )
@@ -334,6 +363,7 @@ async def _fetch_mysql_provider_map() -> Dict[str, Dict[str, Any]]:
         if not model_name:
             continue
         provider = row.get("provider") or row.get("custom_llm_provider") or ""
+        service_provider = row.get("service_provider") or row.get("service") or row.get("vendor") or ""
         api_base = row.get("api_base") or row.get("base_url") or ""
         api_key_env = row.get("api_key_env") or ""
         api_key = row.get("api_key") or ""
@@ -342,6 +372,8 @@ async def _fetch_mysql_provider_map() -> Dict[str, Dict[str, Any]]:
         cache_price = row.get("cache_price_per_1m")
         payload: Dict[str, Any] = {
             "provider": str(provider) if provider else "",
+            "service_provider": str(service_provider) if service_provider else "",
+            "upstream_model": model_name,
             "api_base": str(api_base) if api_base else "",
             "api_key_env": str(api_key_env) if api_key_env else "",
             "input_price_per_1m": _normalize_price(input_price),
@@ -350,7 +382,9 @@ async def _fetch_mysql_provider_map() -> Dict[str, Dict[str, Any]]:
         }
         if api_key:
             payload["api_key"] = str(api_key)
-        provider_map[model_name] = payload
+        model_key = _build_model_key(model_name, service_provider)
+        if model_key:
+            provider_map[model_key] = payload
     return provider_map
 
 
@@ -508,11 +542,18 @@ def _jsonable(obj: Any) -> Any:
 
 
 def _get_models() -> list[Dict[str, Any]]:
-    return [{"id": m, "object": "model"} for m in MODEL_LIST_DATA]
+    models: list[Dict[str, Any]] = []
+    for key in MODEL_LIST_DATA:
+        base, service_provider = _split_model_key(str(key))
+        item = {"id": base or str(key), "object": "model"}
+        if service_provider:
+            item["service_provider"] = service_provider
+        models.append(item)
+    return models
 
 
 def _model_allow_list() -> list[str]:
-    return [item["id"] for item in _get_models() if item.get("id")]
+    return [str(m) for m in MODEL_LIST_DATA if str(m).strip()]
 
 
 def _sanitize_payload(payload: Dict[str, Any]) -> None:
@@ -520,10 +561,12 @@ def _sanitize_payload(payload: Dict[str, Any]) -> None:
         payload.pop(key, None)
 
 
-def _apply_provider_overrides(model: str, payload: Dict[str, Any]) -> None:
+def _apply_provider_overrides(model: str, payload: Dict[str, Any]) -> str:
+    base_model, _service_provider = _split_model_key(model)
+    base_model = base_model or str(model or "")
     cfg = MODEL_PROVIDER_MAP.get(model)
     if not cfg:
-        return
+        return base_model
     provider = cfg.get("provider") or cfg.get("custom_llm_provider")
     api_base = cfg.get("api_base") or cfg.get("base_url")
     api_key_env = cfg.get("api_key_env")
@@ -536,6 +579,8 @@ def _apply_provider_overrides(model: str, payload: Dict[str, Any]) -> None:
         payload["api_base"] = str(api_base)
     if api_key:
         payload["api_key"] = str(api_key)
+    upstream_model = str(cfg.get("upstream_model") or "").strip()
+    return upstream_model or base_model
 
 
 def _ensure_include_usage(payload: Dict[str, Any]) -> None:
@@ -761,7 +806,7 @@ async def chat_completions(
     payload.pop("messages", None)
     payload.pop("model", None)
     _sanitize_payload(payload)
-    _apply_provider_overrides(model, payload)
+    upstream_model = _apply_provider_overrides(model, payload)
     _ensure_include_usage(payload)
     if user_id and "user" not in payload:
         payload["user"] = user_id
@@ -769,7 +814,7 @@ async def chat_completions(
     if stream:
         try:
             response = await litellm.acompletion(
-                model=model,
+                model=upstream_model,
                 messages=messages,
                 stream=True,
                 **payload,
@@ -808,7 +853,7 @@ async def chat_completions(
 
     try:
         response = await litellm.acompletion(
-            model=model,
+            model=upstream_model,
             messages=messages,
             stream=False,
             **payload,
@@ -853,7 +898,7 @@ async def legacy_completions(
     payload.pop("prompt", None)
     payload.pop("model", None)
     _sanitize_payload(payload)
-    _apply_provider_overrides(model, payload)
+    upstream_model = _apply_provider_overrides(model, payload)
     _ensure_include_usage(payload)
     if user_id and "user" not in payload:
         payload["user"] = user_id
@@ -861,7 +906,7 @@ async def legacy_completions(
     if stream:
         try:
             response = await litellm.acompletion(
-                model=model,
+                model=upstream_model,
                 prompt=prompt,
                 stream=True,
                 **payload,
@@ -900,7 +945,7 @@ async def legacy_completions(
 
     try:
         response = await litellm.acompletion(
-            model=model,
+            model=upstream_model,
             prompt=prompt,
             stream=False,
             **payload,

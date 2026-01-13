@@ -83,6 +83,8 @@ Notes:
 - Client-supplied `api_key`/`api_base` are ignored. Use `MODEL_PROVIDER_MAP` + env keys.
 - For local testing, set `DISABLE_AUTH=true`.
 - If `MODEL_LIST`/`MODEL_LIST_FILE` is empty, the allowlist falls back to provider map keys.
+- If `service_provider` is set, `/v1/models` includes it and callers can select a vendor
+  by using `model_name::service_provider` as the request model.
 
 ## File-based config
 The repository includes:
@@ -109,7 +111,8 @@ X-Gateway-Key: <GATEWAY_ADMIN_KEY>
 ```
 
 The table should include:
-- `model_name` (unique)
+- `model_name`
+- `service_provider` (optional, used to disambiguate same model from different vendors)
 - `provider`
 - `api_base`
 - `api_key_env`
@@ -122,6 +125,7 @@ Suggested schema:
 CREATE TABLE llm_gateway_model_map (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   model_name VARCHAR(128) NOT NULL,
+  service_provider VARCHAR(64) NOT NULL DEFAULT '',
   provider VARCHAR(64) NOT NULL,
   api_base VARCHAR(255) NOT NULL,
   api_key_env VARCHAR(64) NOT NULL,
@@ -130,6 +134,6 @@ CREATE TABLE llm_gateway_model_map (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   _openid VARCHAR(64) DEFAULT '' NOT NULL,
-  UNIQUE KEY uniq_model_name (model_name)
+  UNIQUE KEY uniq_model_name_provider (model_name, service_provider)
 );
 ```
